@@ -7,7 +7,7 @@
 
 # Configuración del Poryecto
 # Configure aqui directorio del Proyecto antes de compilar
-PROJECTPATH = D:/FCAL_UNER/Docencia/Compu_3/Practicas_Compu_3/Ejercicios/BaseProject
+PROJECTPATH = D:/FCAL_UNER/Docencia/Compu_3/Practicas_Compu_3/Repositorios/Compu3_FSM_Table/BaseProject
 
 # Link para obtener el compilador
 # https://developer.arm.com/-/media/Files/downloads/gnu-rm/6-2017q2/gcc-arm-none-eabi-6-2017-q2-update-win32.zip?revision=d8809bf7-a431-49ee-98d5-0475d839f8f1?product=GNU%20Arm%20Embedded%20Toolchain,ZIP,,Windows,6-2017-q2-update

@@ -1,27 +1,23 @@
 #include "mbed.h"
+#include <stdbool.h>
 
-#define TRUE    1
-
-#define NROBOTONES  4
+#define NUMBUTT  4
 
 #define MAXLED      4
-
-#define TIMETOSTART 1000
-
-#define TIMEMAX 1501
-
-#define BASETIME 500
-
-#define ESPERAR         0
-#define JUEGO           1
-#define JUEGOTERMINADO  2
-#define TECLAS          3
 
 /**
  * @brief Defino el intervalo entre lecturas para "filtrar" el ruido del Botón
  * 
  */
-#define INTERVAL    40
+#define DEBOUNCETIME    40
+
+/**
+ * @brief Tipo de dato FUNCION, con parámetros genéricos (void *) "casteables" a cualquier tipo de datos
+ * Se va a usar como callback para la estructura de los botones.
+ */
+typedef void (*callAction)(void *param );
+
+
 
 /**
  * @brief Enumeración que contiene los estados de la máquina de estados(MEF) que se implementa para 
@@ -36,210 +32,148 @@ typedef enum{
     BUTTON_RISING   //3
 }_eButtonState;
 
+/**
+ * @brief Enumeración que contiene los eventos del botón
+ * Presionado=0, no_presionado=1, o nada=2 
+ * Esto permite cambiar el orden o el valor en caso de PullUp o PullDown * 
+ */
+typedef enum{
+    EV_PRESSED,
+    EV_NOT_PRESSED,
+    EV_NONE
+}_eEvent;
 
+/**
+ * @brief Estructura para la tabla de la FSM
+ * Este enfoque genera una tabla(variable), en lugar de un switch/case,
+ * Esto permite que la FSM sea más flexible.
+ */
 typedef struct{
-    uint8_t estado;
-    int32_t timeDown;
-    int32_t timeDiff;
-}_sTeclas;
-
-_sTeclas ourButton[NROBOTONES];
-// 0001 , 0010,  0100, 1000
-uint16_t mask[]={0x0001,0x0002,0x0004,0x0008};
-
-uint8_t estadoJuego=ESPERAR;
-
+    _eButtonState currentState;
+    _eEvent event;
+    _eButtonState nextState;
+}_sFsmEntry;
 
 /**
- * @brief Dato del tipo Enum para asignar los estados de la MEF
+ * @brief Tabla de la FSM
+ * La combinación de BOTÓN y EVENTO, Genera el llamado a la función y cambia al próximo evento.
+ * Se pueden realizar tantas combinaciones como séan necesarias. * 
+ */
+_sFsmEntry fsmTable[] = {   
+                            {BUTTON_UP,         EV_PRESSED,     BUTTON_FALLING },
+                            {BUTTON_FALLING,    EV_PRESSED,     BUTTON_DOWN    }, //callback a la funcion por flanco descendente
+                            {BUTTON_FALLING,    EV_NOT_PRESSED, BUTTON_UP      },
+                            {BUTTON_DOWN,       EV_NOT_PRESSED, BUTTON_RISING  },
+                            {BUTTON_RISING,     EV_NOT_PRESSED, BUTTON_UP      }, //callback a la funcion por flanco ascendente
+                            {BUTTON_RISING,     EV_PRESSED,     BUTTON_DOWN    }
+};
+
+/**
+ * @brief Estructura del Botón
+ * Similar a la de la FSM, pero esta, además incorpora el callback (callAction action)
  * 
  */
-_eButtonState myButton;
+typedef struct{
+    _eButtonState currentState;  //!< Estado actual del botón
+    _eEvent event;               //!< Evento PRESSED - NOT_PRESSED - NONE
+    callAction action;           //!< callback, se puede llamara a diferentes funciones por cada botón si fuese necesario
+    uint16_t mask;               //!< Mascara para filtrara el valor del BusIn
+}_sButtons;
+
+_sButtons myButtons[NUMBUTT];
 
 /**
- * @brief Inicializa la MEF
- * Le dá un estado inicial a myButton
- */
-void startMef(uint8_t indice);
-
-/**
- * @brief Máquina de Estados Finitos(MEF)
- * Actualiza el estado del botón cada vez que se invoca.
+ * @brief Función que recorre la tabñla de la FSM
  * 
- * @param buttonState Este parámetro le pasa a la MEF el estado del botón.
+ * @param index Parámetro para identificar los botones
  */
-void actuallizaMef(uint8_t indice );
+void updateDebounceFsm(uint8_t index);
 
 /**
- * @brief Función para cambiar el estado del LED cada vez que sea llamada.
+ * @brief Inicializa los botones, no recibe parámetros.
  * 
  */
-void togleLed(uint8_t indice);
+void initializeButtons(void);
 
-BusIn botones(PB_6,PB_7,PB_8,PB_9);
-BusOut leds(PB_12,PB_13,PB_14,PB_15);
+/**
+ * @brief Función que llamarán los botones cuando se cumpla la combianción en ela tabla de la FSM
+ * 
+ * @param param  Tipo de dato (void *)  en este caso se "casteará" a uint8_t 
+ */
+void onButtonEvent(void *param);
 
 
-//DigitalIn boton(PB_9); //!< DEfino la entrada para el botón
+BusIn buttonArray(PB_6,PB_7,PB_8,PB_9);
 
-//DigitalOut LED(PC_13); //!< Defino la salida del led
 
-Timer miTimer; //!< Timer para hacer la espera de 40 milisegundos
+BusOut lesdArray(PB_12,PB_13,PB_14,PB_15);
 
-int tiempoMs=0; //!< variable donde voy a almacenar el tiempo del timmer una vez cumplido
 
+Timer myTimer;
+
+uint8_t indexAux;
 
 int main()
 {
-    miTimer.start();
-    uint16_t ledAuxRandom=0;
-    int tiempoRandom=0;
-    int ledAuxRandomTime=0;
-    int ledAuxJuegoStart=0;
-    uint8_t indiceAux=0;
-    for(uint8_t indice=0; indice<NROBOTONES;indice++){
-        startMef(indice);
-    }
+    myTimer.start();
+    void initializeButtons();
 
-    while(TRUE)
+    while(true)
     {
-        switch(estadoJuego){
-            case ESPERAR:
-                if ((miTimer.read_ms()-tiempoMs)>INTERVAL){
-                    tiempoMs=miTimer.read_ms();
-                    for(uint8_t indice=0; indice<NROBOTONES;indice++){
-                        actuallizaMef(indice);
-                        if(ourButton[indice].timeDiff >= TIMETOSTART){
-                            srand(miTimer.read_us());
-                            estadoJuego=TECLAS;   
-                        }
-                    }
-                }
-            break;
-            case TECLAS:
-                for( indiceAux=0; indiceAux<NROBOTONES;indiceAux++){
-                    actuallizaMef(indiceAux);
-                    if(ourButton[indiceAux].estado!=BUTTON_UP){
-                        break;
-                    }
-                        
-                }
-                if(indiceAux==NROBOTONES){
-                    estadoJuego=JUEGO;
-                    leds=15;
-                    ledAuxJuegoStart=miTimer.read_ms();
-                }
-            break;
-            case JUEGO:
-                if(leds==0){
-                    ledAuxRandom = rand() % (MAXLED);
-                    ledAuxRandomTime = (rand() % (TIMEMAX))+BASETIME;
-                    tiempoRandom=miTimer.read_ms();
-                    leds=mask[ledAuxRandom];
-                }else{
-                    if((miTimer.read_ms()- ledAuxJuegoStart)> TIMETOSTART) {
-                        if(leds==15){
-                            ledAuxJuegoStart=miTimer.read_ms();
-                            leds=0;
-                        }
-                    }
-                }
-                
-                if ((miTimer.read_ms()-tiempoRandom)>ledAuxRandomTime){
-                    leds=0;
-                }
-
-
-
-                
-
-            break;
-            case JUEGOTERMINADO:
-            break;
-            default:
-                estadoJuego=ESPERAR;
-        }
-        /*
-        if ((miTimer.read_ms()-tiempoRandom)>ledAuxRandomTime){
-            leds=0;
-        }*/
-       
-       /*
-       if ((miTimer.read_ms()-tiempoMs)>INTERVAL){
-           tiempoMs=miTimer.read_ms();
-           for(uint8_t indice=0; indice<NROBOTONES;indice++){
-               actuallizaMef(indice);
-               if(ourButton[indice].timeDiff >= TIMETOSTART){
-                    ourButton[indice].timeDiff=0;
-                    srand(miTimer.read_us());
-                    ledAuxRandom = rand() % (MAXLED);
-                    togleLed(ledAuxRandom);
-                    ledAuxRandomTime = (rand() % (TIMEMAX))+BASETIME;
-                    tiempoRandom=miTimer.read_ms();
-               }
-           }
-        }
-        */
-
-
+        for (uint8_t index=0; index < NUMBUTT ; index++)
+            updateDebounceFsm(index);
     }
-    return 0;
+
+    return EXIT_SUCCESS;
 }
 
 
-
-void startMef(uint8_t indice){
-   ourButton[indice].estado=BUTTON_UP;
-}
-
-
-void actuallizaMef(uint8_t indice){
-
-    switch (ourButton[indice].estado)
+void updateDebounceFsm(uint8_t index)
+{
+    static uint16_t timeToDebounce=0;
+    // Reviso el valor del botón cada 40 ms (DEBOUNCETIME)
+    if((myTimer.read_ms()-timeToDebounce)>=DEBOUNCETIME)
     {
-    case BUTTON_DOWN:
-        if(botones.read() & mask[indice] )
-           ourButton[indice].estado=BUTTON_RISING;
-    
-    break;
-    case BUTTON_UP:
-        if(!(botones.read() & mask[indice]))
-            ourButton[indice].estado=BUTTON_FALLING;
-    
-    break;
-    case BUTTON_FALLING:
-        if(!(botones.read() & mask[indice]))
-        {
-            ourButton[indice].timeDown=miTimer.read_ms();
-            ourButton[indice].estado=BUTTON_DOWN;
-            //Flanco de bajada
-        }
-        else
-            ourButton[indice].estado=BUTTON_UP;    
+        timeToDebounce=myTimer.read_ms();
+        myButtons[index].event = (buttonArray & myButtons[index].mask) ? EV_NOT_PRESSED : EV_PRESSED;
+	}
+	// Si no hay eventos, retornamos para evitar pasar por la FSM
+	if(myButtons[index].event == EV_NONE) {
+		return;
+	}
+	//... de otro modo, recorremos la tabla de la FSM 
+	for( indexAux=0; indexAux < sizeof(fsmTable)/sizeof(_sFsmEntry); indexAux++) {
+		// Si el botón coincide con una combinación de Estado y Evento de la tabla ....
+		if(fsmTable[indexAux].currentState == myButtons[index].currentState && fsmTable[indexAux].event == myButtons[index].event) {
+			(*(myButtons[indexAux].action))(&index); // ... Ejecutamos la acción ...
+			myButtons[index].currentState = fsmTable[indexAux].nextState; // ... y movemos el estado del botón al próximo estado de la FSM
+		}
+	}
+	// Limpiamos el evento para evitar pasar una y otra vez por la tabla.
+	myButtons[index].event = EV_NONE;
 
-    break;
-    case BUTTON_RISING:
-        if(botones.read() & mask[indice]){
-            ourButton[indice].estado=BUTTON_UP;
-            //Flanco de Subida
-            ourButton[indice].timeDiff=miTimer.read_ms()-ourButton[indice].timeDown;
-           /*
-            if(ourButton[indice].timeDiff >= TIMETOSTART)
-                togleLed(indice);
-                */
-        }
+}
 
-        else
-            ourButton[indice].estado=BUTTON_DOWN;
-    
-    break;
-    
-    default:
-    startMef(indice);
-        break;
+void initializeButtons(void)
+{
+    for(indexAux=0; indexAux<NUMBUTT; indexAux++)
+    {
+        myButtons[indexAux].currentState=BUTTON_UP;
+        myButtons[indexAux].event = EV_NONE;
+        myButtons[indexAux].mask =0;
+        myButtons[indexAux].mask |= 1<<indexAux;
+        myButtons[indexAux].action = onButtonEvent;
     }
 }
 
-void togleLed(uint8_t indice){
-   leds=mask[indice];
+void onButtonEvent(void *param)
+{
+    uint8_t *parameter = (uint8_t *) param;
+    uint8_t index = *parameter;
+    uint16_t ledAux=lesdArray;
+    if(lesdArray & myButtons[index].mask)
+        ledAux &= ~(1<<index);
+    else
+        ledAux |= 1<<index;
+    lesdArray=ledAux;
 }
