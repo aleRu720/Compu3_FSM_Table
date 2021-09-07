@@ -70,7 +70,6 @@ _sFsmEntry fsmTable[] = {
                             {BUTTON_RISING,     EV_PRESSED,     BUTTON_DOWN    }
 };
 
-//_sFsmEntry fsmTable[4];
 /**
  * @brief Estructura del Botón
  * Similar a la de la FSM, pero esta, además incorpora el callback (callAction action)
@@ -156,10 +155,10 @@ void updateDebounceFsm(uint8_t index)
    
 	//... de otro modo, recorremos la tabla de la FSM 
 	for( indexAux=0; indexAux < sizeof(fsmTable)/sizeof(_sFsmEntry); indexAux++) {
-		// Si el botón coincide con una combinación de Estado y Evento de la tabla ....
+		// Si el botón coincide con una combinación de Estado y Evento de la tabla entramos al IF
 		if(fsmTable[indexAux].currentState == myButtons[index].currentState && fsmTable[indexAux].event == myButtons[index].event) {
             if(indexAux==BUTTON_RISING) // ...Si la combinacion pertenece a Flanco Ascendente 
-                (*(myButtons[index].action))(&index); // ... Ejecutamos la acción ...
+                (myButtons[index].action)(&index); // ... Ejecutamos la acción ...
 			myButtons[index].currentState = fsmTable[indexAux].nextState; // movemos el estado del botón al próximo estado de la FSM
 		}
 	}
