@@ -5,6 +5,8 @@
 
 #define MAXLED      4
 
+#define HEARBEATTIME    1000
+
 /**
  * @brief Defino el intervalo entre lecturas para "filtrar" el ruido del Botón
  * 
@@ -15,9 +17,9 @@
  * @brief Tipo de dato FUNCION, con parámetros genéricos (void *) "casteables" a cualquier tipo de datos
  * Se va a usar como callback para la estructura de los botones.
  */
-typedef void (*callAction)(void *param );
+typedef void (*callAction)(void *param);
 
-
+DigitalOut hearbeatLed(PC_13);
 
 /**
  * @brief Enumeración que contiene los estados de la máquina de estados(MEF) que se implementa para 
@@ -61,13 +63,14 @@ typedef struct{
  */
 _sFsmEntry fsmTable[] = {   
                             {BUTTON_UP,         EV_PRESSED,     BUTTON_FALLING },
-                            {BUTTON_FALLING,    EV_PRESSED,     BUTTON_DOWN    }, //callback a la funcion por flanco descendente
                             {BUTTON_FALLING,    EV_NOT_PRESSED, BUTTON_UP      },
-                            {BUTTON_DOWN,       EV_NOT_PRESSED, BUTTON_RISING  },
+                            {BUTTON_FALLING,    EV_PRESSED,     BUTTON_DOWN    }, //callback a la funcion por flanco descendente
                             {BUTTON_RISING,     EV_NOT_PRESSED, BUTTON_UP      }, //callback a la funcion por flanco ascendente
+                            {BUTTON_DOWN,       EV_NOT_PRESSED, BUTTON_RISING  },
                             {BUTTON_RISING,     EV_PRESSED,     BUTTON_DOWN    }
 };
 
+//_sFsmEntry fsmTable[4];
 /**
  * @brief Estructura del Botón
  * Similar a la de la FSM, pero esta, además incorpora el callback (callAction action)
@@ -113,15 +116,24 @@ Timer myTimer;
 
 uint8_t indexAux;
 
+
 int main()
 {
+    hearbeatLed=0;
     myTimer.start();
-    void initializeButtons();
-
+    initializeButtons();
+    uint16_t hearbeat=0;
     while(true)
     {
+        if((myTimer.read_ms()-hearbeat)>= HEARBEATTIME)
+        {
+            hearbeat=myTimer.read_ms();
+            hearbeatLed=!hearbeatLed;
+        }
         for (uint8_t index=0; index < NUMBUTT ; index++)
+        {
             updateDebounceFsm(index);
+        }
     }
 
     return EXIT_SUCCESS;
@@ -141,17 +153,18 @@ void updateDebounceFsm(uint8_t index)
 	if(myButtons[index].event == EV_NONE) {
 		return;
 	}
+   
 	//... de otro modo, recorremos la tabla de la FSM 
 	for( indexAux=0; indexAux < sizeof(fsmTable)/sizeof(_sFsmEntry); indexAux++) {
 		// Si el botón coincide con una combinación de Estado y Evento de la tabla ....
 		if(fsmTable[indexAux].currentState == myButtons[index].currentState && fsmTable[indexAux].event == myButtons[index].event) {
-			(*(myButtons[indexAux].action))(&index); // ... Ejecutamos la acción ...
-			myButtons[index].currentState = fsmTable[indexAux].nextState; // ... y movemos el estado del botón al próximo estado de la FSM
+            if(indexAux==BUTTON_RISING) // ...Si la combinacion pertenece a Flanco Ascendente 
+                (*(myButtons[index].action))(&index); // ... Ejecutamos la acción ...
+			myButtons[index].currentState = fsmTable[indexAux].nextState; // movemos el estado del botón al próximo estado de la FSM
 		}
 	}
 	// Limpiamos el evento para evitar pasar una y otra vez por la tabla.
 	myButtons[index].event = EV_NONE;
-
 }
 
 void initializeButtons(void)
@@ -168,12 +181,12 @@ void initializeButtons(void)
 
 void onButtonEvent(void *param)
 {
-    uint8_t *parameter = (uint8_t *) param;
-    uint8_t index = *parameter;
+    uint8_t *index = (uint8_t *) param;
     uint16_t ledAux=lesdArray;
-    if(lesdArray & myButtons[index].mask)
-        ledAux &= ~(1<<index);
+
+    if(lesdArray & myButtons[*index].mask)
+        ledAux &= ~(1<<(*index));
     else
-        ledAux |= 1<<index;
+        ledAux |= 1<<(*index);
     lesdArray=ledAux;
 }
