@@ -14,8 +14,11 @@
 #define DEBOUNCETIME    40
 
 /**
- * @brief Tipo de dato FUNCION, con parámetros genéricos (void *) "casteables" a cualquier tipo de datos
+ * @brief Tipo de dato FUNCION.
+ * Con parámetros genéricos (void *) "casteables" a cualquier tipo de datos
  * Se va a usar como callback para la estructura de los botones.
+ * Si se asignan diferentes funciones a los distintos botones, se pueden pasar diferentes
+ * parámetros por cada función usando el mismo prototipo.
  */
 typedef void (*callAction)(void *param);
 
@@ -78,14 +81,14 @@ _sFsmEntry fsmTable[] = {
 typedef struct{
     _eButtonState currentState;  //!< Estado actual del botón
     _eEvent event;               //!< Evento PRESSED - NOT_PRESSED - NONE
-    callAction action;           //!< callback, se puede llamara a diferentes funciones por cada botón si fuese necesario
+    callAction action;           //!< callback, se puede llamar a diferentes funciones por cada botón si fuese necesario
     uint16_t mask;               //!< Mascara para filtrara el valor del BusIn
 }_sButtons;
 
 _sButtons myButtons[NUMBUTT];
 
 /**
- * @brief Función que recorre la tabñla de la FSM
+ * @brief Función que recorre la tabla de la FSM
  * 
  * @param index Parámetro para identificar los botones
  */
@@ -147,6 +150,14 @@ void updateDebounceFsm(uint8_t index)
     {
         timeToDebounce=myTimer.read_ms();
         myButtons[index].event = (buttonArray & myButtons[index].mask) ? EV_NOT_PRESSED : EV_PRESSED;
+        //Este código es el equivalente a la linea 149
+        /*
+        if (buttonArray & myButtons[index].mask){
+             myButtons[index].event =EV_NOT_PRESSED;
+        }else{
+           myButtons[index].event =EV_PRESSED; 
+        }*/
+
 	}
 	// Si no hay eventos, retornamos para evitar pasar por la FSM
 	if(myButtons[index].event == EV_NONE) {
@@ -154,11 +165,11 @@ void updateDebounceFsm(uint8_t index)
 	}
    
 	//... de otro modo, recorremos la tabla de la FSM 
-	for( indexAux=0; indexAux < sizeof(fsmTable)/sizeof(_sFsmEntry); indexAux++) {
+	for( indexAux=0; indexAux < (sizeof(fsmTable)/sizeof(_sFsmEntry)); indexAux++) {
 		// Si el botón coincide con una combinación de Estado y Evento de la tabla entramos al IF
 		if(fsmTable[indexAux].currentState == myButtons[index].currentState && fsmTable[indexAux].event == myButtons[index].event) {
             if(indexAux==BUTTON_RISING) // ...Si la combinacion pertenece a Flanco Ascendente 
-                (myButtons[index].action)(&index); // ... Ejecutamos la acción ...
+                (myButtons[index].action)(&index); // ... Ejecutamos la acción(llamamos a la función) ...
 			myButtons[index].currentState = fsmTable[indexAux].nextState; // movemos el estado del botón al próximo estado de la FSM
 		}
 	}
